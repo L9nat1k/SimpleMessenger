@@ -632,6 +632,181 @@
                 goToChat();
             }
         };
+        // Подключение к серверу
+const socket = io('http://localhost:3000');
+
+// Обновляем функцию регистрации
+function register() {
+    const username = document.getElementById('username').value.trim();
+    
+    if (!username) {
+        alert('Пожалуйста, введите имя');
+        return;
+    }
+
+    const userID = generateUserID();
+    
+    // Отправляем данные на сервер
+    socket.emit('register', {
+        userId: userID,
+        username: username
+    });
+
+    socket.on('registered', (data) => {
+        currentUser = {
+            id: data.userId,
+            username: data.username
+        };
+
+        // Сохраняем локально для быстрого доступа
+        localStorage.setItem('currentUser', JSON.stringify(currentUser));
+        
+        document.getElementById('registerForm').style.display = 'none';
+        document.getElementById('userInfo').style.display = 'block';
+        document.getElementById('displayUserID').textContent = data.userId;
+    });
+}
+
+// Загрузка списка пользователей с сервера
+function loadContacts() {
+    socket.emit('getUsers');
+    
+    socket.on('userList', (users) => {
+        const contactsList = document.getElementById('contactsList');
+        contactsList.innerHTML = '';
+
+        users.forEach(user => {
+            if (user.id !== currentUser.id) {
+                const contactElement = document.createElement('div');
+                contactElement.className = 'contact';
+                contactElement.onclick = () => selectChat(user);
+                
+                contactElement.innerHTML = `
+                    <div class="contact-avatar">${user.username.charAt(0)}</div>
+                    <div class="contact-info">
+                        <h4>${user.username}</h4>
+                        <p>ID: ${user.id}</p>
+                    </div>
+                `;
+                
+                contactsList.appendChild(contactElement);
+            }
+        });
+    });
+}
+
+// Отправка сообщения на сервер
+function sendMessage() {
+    if (!currentChat) {
+        alert('Выберите пользователя для общения');
+        return;
+    }
+
+    const input = document.getElementById('messageInput');
+    const text = input.value.trim();
+
+    if (!text) return;
+
+    // Отправляем сообщение на сервер
+    socket.emit('sendMessage', {
+        from: currentUser.id,
+        to: currentChat.id,
+        text: text
+    });
+
+    socket.on('messageSent', (message) => {
+        // Добавляем сообщение в интерфейс
+        addMessageToUI(message, true);
+        input.value = '';
+        input.focus();
+    });
+}
+
+// Получение новых сообщений от сервера
+socket.on('newMessage', (message) => {
+    if (currentChat && (message.from === currentChat.id || message.to === currentChat.id)) {
+        addMessageToUI(message, false);
+    }
+    
+    // Обновляем список контактов
+    loadContacts();
+});
+
+// Загрузка истории сообщений
+function loadMessages(userId) {
+    socket.emit('getMessages', {
+        userId: currentUser.id,
+        otherUserId: userId
+    });
+
+    socket.on('messageHistory', (messages) => {
+        const messagesContainer = document.getElementById('messagesContainer');
+        messagesContainer.innerHTML = '';
+
+        if (messages.length === 0) {
+            messagesContainer.innerHTML = `
+                <div style="text-align: center; color: #666; padding: 40px;">
+                    Начните общение с ${users[userId]?.username || 'пользователем'}
+                </div>
+            `;
+            return;
+        }
+
+        messages.forEach(msg => {
+            addMessageToUI(msg, msg.from === currentUser.id);
+        });
+    });
+}
+
+// Вспомогательная функция для добавления сообщения в UI
+function addMessageToUI(message, isSent) {
+    const messagesContainer = document.getElementById('messagesContainer');
+    const messageElement = document.createElement('div');
+    messageElement.className = `message ${isSent ? 'sent' : 'received'}`;
+    
+    const time = new Date(message.timestamp).toLocaleTimeString([], { 
+        hour: '2-digit', 
+        minute: '2-digit' 
+    });
+    
+    messageElement.innerHTML = `
+        <div class="message-content">
+            ${message.text}
+            <div class="message-time">${time}</div>
+        </div>
+    `;
+    
+    messagesContainer.appendChild(messageElement);
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
+// Обновляем вход
+function login() {
+    const userID = document.getElementById('userID').value.trim();
+    const errorDiv = document.getElementById('loginError');
+
+    if (!userID) {
+        errorDiv.textContent = 'Пожалуйста, введите ID';
+        return;
+    }
+
+    // Пытаемся восстановить пользователя из localStorage
+    const savedUser = localStorage.getItem('currentUser');
+    if (savedUser) {
+        const userData = JSON.parse(savedUser);
+        if (userData.id === userID) {
+            currentUser = userData;
+            socket.emit('register', {
+                userId: userID,
+                username: userData.username
+            });
+            goToChat();
+            return;
+        }
+    }
+    
+    errorDiv.textContent = 'Пользователь не найден. Зарегистрируйтесь заново.';
+}
     </script>
 </body>
 </html>
